@@ -13,10 +13,8 @@ RUN cd / && \
     git clone https://github.com/darosior/bitcoin.git && \
     cd bitcoin && \
     git checkout tapminiscript && \
-    ./contrib/install_db4.sh `pwd` && \
-    export BDB_PREFIX='/bitcoin/db4' && \
     ./autogen.sh && \
-    ./configure BDB_LIBS="-L${BDB_PREFIX}/lib -ldb_cxx-4.8" BDB_CFLAGS="-I${BDB_PREFIX}/include" --enable-suppress-external-warnings && \
+    ./configure --enable-suppress-external-warnings && \
     make -j "$(($(nproc)+1))" && \
     mkdir bin && \
     cp src/bitcoind src/bitcoin-cli src/bitcoin-tx src/bitcoin-util src/bitcoin-wallet ./bin
