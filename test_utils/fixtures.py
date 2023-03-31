@@ -107,7 +107,7 @@ def root_directory(request):
 @pytest.fixture
 def comm(settings, root_directory, hid, headless, model, app_version: str) -> Union[TransportClient, SpeculosClient]:
     if hid:
-        client = TransportClient("hid")
+        client = TransportClient("tcp")
     else:
         # We set the app's name before running speculos in order to emulate the expected
         # behavior of the SDK's GET_VERSION default APDU.

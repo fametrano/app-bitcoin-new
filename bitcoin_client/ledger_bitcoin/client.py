@@ -256,7 +256,7 @@ class NewClient(Client):
 
 def createClient(comm_client: Optional[TransportClient] = None, chain: Chain = Chain.MAIN, debug: bool = False) -> Union[LegacyClient, NewClient]:
     if comm_client is None:
-        comm_client = TransportClient("hid")
+        comm_client = TransportClient("tcp")
 
     base_client = Client(comm_client, chain, debug)
     app_name, app_version, _ = base_client.get_version()
