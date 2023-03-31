@@ -178,7 +178,7 @@ $(info GCCPATH is not set: arm-none-eabi-* will be used from PATH)
 endif
 
 CC      := $(CLANGPATH)clang
-CFLAGS  += -Oz
+CFLAGS  += -Oz -g
 AS      := $(GCCPATH)arm-none-eabi-gcc
 LD      := $(GCCPATH)arm-none-eabi-gcc
 LDFLAGS += -O3 -Os
