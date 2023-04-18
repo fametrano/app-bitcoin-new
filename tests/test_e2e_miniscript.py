@@ -1,4 +1,5 @@
 import pytest
+import re
 
 from typing import List, Union
 
@@ -21,7 +22,7 @@ from .conftest import create_new_wallet, generate_blocks, get_unique_wallet_name
 from .conftest import AuthServiceProxy
 
 
-def run_test_e2e(wallet_policy: WalletPolicy, core_wallet_names: List[str], rpc: AuthServiceProxy, rpc_test_wallet: AuthServiceProxy, client: Client, speculos_globals: SpeculosGlobals, comm: Union[TransportClient, SpeculosClient]):
+def run_test_e2e(wallet_policy: WalletPolicy, core_wallet_names: List[str], rpc: AuthServiceProxy, rpc_test_wallet: AuthServiceProxy, client: Client, speculos_globals: SpeculosGlobals, comm: Union[TransportClient, SpeculosClient], *, only_check_address=False):
     with automation(comm, "automations/register_wallet_accept.json"):
         wallet_id, wallet_hmac = client.register_wallet(wallet_policy)
 
@@ -42,6 +43,9 @@ def run_test_e2e(wallet_policy: WalletPolicy, core_wallet_names: List[str], rpc:
     address_core = rpc.deriveaddresses(receive_descriptor_chk, [3, 3])[0]
 
     assert T(address_hww) == address_core
+
+    if only_check_address:
+        return
 
     # also get the change descriptor for later
     change_descriptor = wallet_policy.get_descriptor(change=True)
@@ -358,6 +362,80 @@ def test_e2e_miniscript_policy_with_a(rpc, rpc_test_wallet, client: Client, spec
         ])
 
     run_test_e2e(wallet_policy, [core_wallet_name3], rpc, rpc_test_wallet, client, speculos_globals, comm)
+
+
+def test_e2e_miniscript_all_fragments(rpc, rpc_test_wallet, client: Client, speculos_globals: SpeculosGlobals, comm: Union[TransportClient, SpeculosClient]):
+    # Create some miniscripts to exercise all possible fragments at least once
+    # (currently only covering miniscript in `wsh()`, not on taproot leaves)
+
+    # arbitrary 20-bytes and 32-bytes hex strings
+    H20 = bytes(list(range(20))).hex()
+    H32 = bytes(list(range(32))).hex()
+
+    fragments = [
+        "or_d(pk(@1/**),0)",                     # 0
+        "1",                                     # 1
+        "c:pk_k(@1/**)",                         # pk_k and c:
+        "c:pk_h(@1/**)",                         # pk_h
+        "older(42)",                             # older
+        "after(42)",                             # after
+        f"sha256({H32})",                        # sha256
+        f"ripemd160({H20})",                     # ripemd160
+        f"hash256({H32})",                       # hash256
+        f"hash160({H20})",                       # hash160
+        "andor(pk(@1/**),older(42),pk(@2/**))",  # andor
+        "and_v(v:pk(@1/**),pk(@2/**))",          # and_v and v:
+        "and_b(pk(@1/**),a:pk(@2/**))",          # and_b and a:
+        "or_b(pk(@1/**),a:pk(@2/**))",           # or_b
+        "t:or_c(pk(@1/**),v:pk(@2/**))",         # or_c and t:
+        "or_d(pk(@1/**),pk(@2/**))",             # or_d
+        "or_i(pk(@1/**),pk(@2/**))",             # or_i
+        "thresh(1,pk(@1/**),a:pk(@2/**))",       # thresh
+        "multi(2,@1/**,@2/**,@3/**)",            # multi
+
+        # WRAPPERS not covered above
+        # a: is covered
+        "and_b(1,s:pk(@1/**))",                  # s:
+        # c: is covered
+        "dv:older(42)",                          # d:
+        # t: is covered
+        # v: is covered
+        "j:pk(@1/**)",                           # j:
+        "n:pk(@1/**)",                           # n:
+        "l:pk(@1/**)",                           # l:
+        "u:pk(@1/**)",                           # u:
+    ]
+
+    def prepend_a(frag):
+        # prepends the a: wrapper (taking into account that `frag` could already start with wrappers)
+        if re.match("^[a-z]+:", frag):
+            return "a" + frag
+        else:
+            return "a:" + frag
+
+    for fr in fragments:
+        # We use "and_b(pk(@0/**),<miniscript_to_be_tested>})" as a generic gadget to compute a valid descriptor
+        # that can be registered, as long as the <miniscript_to_be_tested> if valid and safe.
+        # The key placeholders in <miniscript_to_be_tested> must start from @1 (if present).
+        desc = f"wsh(and_b(pk(@0/**),{prepend_a(fr)}))"
+
+        path = "48'/1'/0'/2'"
+        internal_xpub = get_internal_xpub(speculos_globals.seed, path)
+        internal_xpub_orig = f"[{speculos_globals.master_key_fingerprint.hex()}/{path}]{internal_xpub}"
+
+        n_core_xpubs = fr.count("@")
+        core_xpubs = []
+        for _ in range(n_core_xpubs):
+            _, core_xpub = create_new_wallet()
+            core_xpubs.append(core_xpub)
+
+        wallet_policy = WalletPolicy(
+            name="A policy",
+            descriptor_template=desc,
+            keys_info=[internal_xpub_orig, *core_xpubs]
+        )
+
+        run_test_e2e(wallet_policy, [], rpc, rpc_test_wallet, client, speculos_globals, comm, only_check_address=True)
 
 
 def test_invalid_miniscript(rpc, client: Client, speculos_globals: SpeculosGlobals):
